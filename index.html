@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Quest Explorer</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            text-align: center; 
+            background: #f0f0f0; 
+            margin: 0; 
+            padding: 20px; 
+        }
+        canvas { 
+            border: 2px solid #333; 
+            background: #fff; 
+            display: block; 
+            margin: 20px auto; 
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        #log { 
+            margin: 20px auto; 
+            width: 90%; 
+            max-width: 600px; 
+            height: 180px; 
+            overflow-y: scroll; 
+            border: 1px solid #aaa; 
+            padding: 12px; 
+            background: white; 
+            text-align: left; 
+            font-size: 14px;
+        }
+        button { 
+            margin: 6px; 
+            padding: 10px 24px; 
+            font-size: 16px; 
+            cursor: pointer; 
+        }
+        input { 
+            padding: 10px; 
+            font-size: 16px; 
+            width: 220px; 
+        }
+        h1 { color: #333; }
+    </style>
+</head>
+<body>
+
+    <div id="start-screen">
+        <h1>AI Quest Explorer</h1>
+        <p>Введите имя персонажа:</p>
+        <input type="text" id="player-name" placeholder="Имя героя">
+        <br><br>
+        <button onclick="startGame()">Начать приключение</button>
+    </div>
+
+    <div id="game-screen" style="display: none;">
+        <h1>Приключение началось!</h1>
+        <canvas id="game-canvas" width="400" height="300"></canvas>
+        <div id="log"></div>
+        <div>
+            <button onclick="move('north')">Север</button>
+            <button onclick="move('south')">Юг</button>
+            <button onclick="move('east')">Восток</button>
+            <button onclick="move('west')">Запад</button>
+        </div>
+        <div>
+            <button onclick="fight()">Атаковать монстра</button>
+            <button onclick="collect()">Собрать артефакт</button>
+        </div>
+    </div>
+
+    <div id="end-screen" style="display: none;">
+        <h1>Игра завершена!</h1>
+        <p id="end-message" style="font-size: 20px; color: #c00;"></p>
+        <button onclick="location.reload()">Играть заново</button>
+    </div>
+
+    <script>
+        // Данные игрока
+        let player = {
+            name: '',
+            hp: 100,
+            artifacts: 0,
+            position: { x: 0, y: 0 }
+        };
+
+        // Локации (сгенерированы AI ранее)
+        const locations = [
+            { name: 'Лес',     desc: 'Тёмный лес с шепотом ветра. Здесь может быть монстр.',     hasMonster: true,  hasArtifact: false },
+            { name: 'Гора',    desc: 'Высокая гора с видом на долину. NPC: "Привет, путник! Возьми зелье."', hasMonster: false, hasArtifact: true  },
+            { name: 'Пещера',  desc: 'Тёмная пещера с эхом. Монстр рычит!',                     hasMonster: true,  hasArtifact: true  },
+            { name: 'Река',    desc: 'Быстрая река. Можно найти артефакт на берегу.',           hasMonster: false, hasArtifact: true  },
+            { name: 'Замок',   desc: 'Старый замок. Финальный босс!',                           hasMonster: true,  hasArtifact: false }
+        ];
+
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+        let images = {};
+
+        // Правильная загрузка изображений (относительные пути!)
+        function loadImages() {
+            const imgList = [
+                { key: 'player',  file: 'player.png'   },
+                { key: 'Лес',     file: 'les.png'      },
+                { key: 'Гора',    file: 'gora.png'     },
+                { key: 'Пещера',  file: 'peshera.png'  },
+                { key: 'Река',    file: 'reka.png'     },
+                { key: 'Замок',   file: 'zamok.png'    }
+            ];
+
+            imgList.forEach(item => {
+                const img = new Image();
+                img.src = 'assets/' + item.file;
+                images[item.key] = img;
+
+                // Для отладки — можно посмотреть в консоли, загрузилась ли картинка
+                img.onload = () => console.log(`Загружено: ${item.file}`);
+                img.onerror = () => console.error(`Ошибка загрузки: ${item.file}`);
+            });
+        }
+
+        // Отрисовка сцены
+        function drawScene(location) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Фон локации
+            const bgImage = images[location.name] || images['Лес'];
+            if (bgImage) {
+                ctx.drawImage(bgImage, 0, 0, 400, 300);
+            } else {
+                // Запасной вариант — серый фон
+                ctx.fillStyle = '#888';
+                ctx.fillRect(0, 0, 400, 300);
+            }
+
+            // Персонаж
+            if (images['player']) {
+                ctx.drawImage(images['player'], 168, 190, 64, 64);
+            } else {
+                ctx.fillStyle = '#00f';
+                ctx.fillRect(168, 190, 64, 64);
+                ctx.fillStyle = '#fff';
+                ctx.font = '12px Arial';
+                ctx.fillText('Player', 175, 230);
+            }
+
+            // Полоса HP
+            ctx.fillStyle = 'red';
+            ctx.fillRect(10, 10, player.hp * 2, 20);
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(10, 10, 200, 20);
+
+            ctx.fillStyle = 'black';
+            ctx.font = '16px Arial';
+            ctx.fillText(`HP: ${player.hp}`, 12, 38);
+            ctx.fillText(`Артефакты: ${player.artifacts}`, 12, 58);
+        }
+
+        function logMessage(msg) {
+            const log = document.getElementById('log');
+            log.innerHTML += `<p>${msg}</p>`;
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function startGame() {
+            player.name = document.getElementById('player-name').value.trim() || 'Герой';
+            document.getElementById('start-screen').style.display = 'none';
+            document.getElementById('game-screen').style.display = 'block';
+
+            loadImages();
+            logMessage(`Добро пожаловать, ${player.name}! Ты стоишь на опушке тёмного леса.`);
+            enterLocation(0);
+        }
+
+        function enterLocation(index) {
+            const loc = locations[index % locations.length];
+            logMessage(`<b>Локация: ${loc.name}</b>`);
+            logMessage(loc.desc);
+            drawScene(loc);
+
+            if (loc.hasMonster) logMessage('Внимание! Здесь появляется монстр!');
+            if (loc.hasArtifact) logMessage('Ты замечаешь сияющий артефакт...');
+        }
+
+        function move(direction) {
+            if (direction === 'north') player.position.y += 1;
+            if (direction === 'south') player.position.y -= 1;
+            if (direction === 'east')  player.position.x += 1;
+            if (direction === 'west')  player.position.x -= 1;
+
+            const newIndex = Math.abs(player.position.x + player.position.y * 3) % locations.length;
+            logMessage(`Ты отправляешься на ${direction}...`);
+            enterLocation(newIndex);
+        }
+
+        function fight() {
+            if (Math.random() > 0.4) {  // ~60% шанс победы
+                logMessage('Ты нанёс точный удар — монстр повержен!');
+            } else {
+                const damage = Math.floor(Math.random() * 15) + 10; // 10–25 урона
+                player.hp -= damage;
+                logMessage(`Монстр ранил тебя на ${damage} HP! Осталось: ${player.hp}`);
+                drawScene(locations[0]); // обновляем HP на экране
+                if (player.hp <= 0) {
+                    endGame('Твоё здоровье исчерпано... Ты пал в бою. Поражение.');
+                }
+            }
+        }
+
+        function collect() {
+            player.artifacts += 1;
+            logMessage(`Артефакт успешно собран! Теперь у тебя ${player.artifacts} штук.`);
+            drawScene(locations[0]); // обновляем счётчик
+            if (player.artifacts >= 3) {
+                endGame('Поздравляем! Ты собрал все артефакты и победил зло. Победа!');
+            }
+        }
+
+        function endGame(message) {
+            document.getElementById('game-screen').style.display = 'none';
+            document.getElementById('end-screen').style.display = 'block';
+            document.getElementById('end-message').innerText = message;
+        }
+    </script>
+</body>
+</html>
